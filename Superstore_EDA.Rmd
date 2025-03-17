@@ -1,0 +1,577 @@
+---
+title: "Superstore Dataset Analysis"
+output: html_notebook
+---
+
+Use your current knowledge in R and conduct research to expand your skills. Create a comprehensive Exploratory Data Analysis (EDA) for the Superstore dataset. The goal is to generate visualizations and calculations to answer the following business questions.
+
+```{r}
+#Preparation for EDA
+library(tidyverse)
+library(lubridate)
+library(scales)
+```
+
+```{r}
+#Load the superstore dataset
+
+super_store <- read.csv("Sample - Superstore.csv")
+
+head(super_store)
+```
+
+```{r}
+str(super_store)
+```
+
+```{r}
+summary(super_store)
+```
+
+```{r}
+#Checking for missing values
+colSums(is.na(super_store))
+```
+
+```{r}
+#Checking for duplicates
+duplicates <- super_store[duplicated(super_store), ]
+super_store <- super_store[!duplicated(super_store), ]
+sum(duplicated(super_store))
+```
+
+```{r}
+# Checking Order ID for duplicates
+duplicate_orders <- super_store %>%
+    filter(duplicated(Order.ID) | duplicated(Order.ID, fromLast = TRUE))
+
+head(duplicate_orders)
+```
+
+```{r}
+#Random checking of Order IDs to validate if they represent distinct products
+#View(super_store[super_store$Order.ID == "CA-2016-126004", ])
+```
+
+### Tasks:
+
+-   Identify which months consistently show sales peaks.
+
+-   Find any unusual dips in the trend line.
+
+-   (Optional) Calculate the Year-over-Year (YOY) growth rate for the most recent complete year.
+
+-   Suggest potential reasons for seasonal patterns.
+
+```{r}
+# Converting 'Order Date' to Date format as well as 'Ship.Date
+super_store$Order.Date <- as.Date(super_store$Order.Date, format="%m/%d/%Y") 
+super_store$Ship.Date <- as.Date(super_store$Ship.Date, format="%m/%d/%Y") 
+
+# Extracting Year and Month
+super_store <- super_store %>%
+  mutate(Year = year(Order.Date), 
+         Month = month(Order.Date, label = TRUE, abbr = TRUE))
+head(super_store)
+```
+
+```{r}
+# Aggregating sales by Year and Month
+monthly_sales <- super_store %>%
+  group_by(Year, Month) %>%
+  summarise(Total_Sales = sum(Sales), .groups = "drop")
+print(monthly_sales)
+```
+
+```{r}
+# Visualizing sales trend over time
+ggplot(monthly_sales, aes(x = Month, y = Total_Sales, group = Year, color = as.factor(Year))) +
+  geom_line(size = 1) +
+  geom_point(size = 2) +
+  labs(title = "Monthly Sales Trends Over the Years",
+       x = "Month", 
+       y = "Total Sales",
+       color = "Year") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust= 0.5))
+```
+```{r}
+# 1.Months with Consistent Sales Peaks:
+
+# •	March: Sales are consistently higher in March across all months. This could signal a recurring trend or seasonal factor.
+# •	September: Peaks are seen in September as well, suggesting it’s another strong sales month.
+# •	November: Sales surge in November as well, possibly aligning with events like Black Friday or early holiday shopping.
+
+# 2. Unusual Dips in the Trend Line:
+# •	February: Across all months a significant dip might indicate a shift in priorities like paying of holidays debts.
+# •	April 2014: A noticeable drop in sales could relate to external factors like tax season affecting disposable income.
+# •	August: Sales for years, 2014, 2016 seem to drop, which might be tied to summer vacations or other seasonal shifts reducing consumer activity.
+# •	October: Sales across all years seem to drop, which could indicate people waiting for November month for Black Friday. 
+
+# 3. Potential Reasons for Seasonal Patterns:
+
+# •	March Peaks: End-of-quarter sales strategies or promotions might explain higher sales during this month.
+# •	September Peaks: These could be driven by back-to-school shopping or end-of-summer clearances.
+# •	November Peaks: Likely linked to Black Friday sales, Cyber Monday, or pre-holiday shopping.
+# •	Dips in February: Typically attributed to consumers cutting back after holiday spending.
+# •	August Dips: Summer breaks or vacations may result in reduced discretionary spending during this period.
+
+```
+
+```{r}
+# Calculating Year-over-Year (YOY) Growth Rate
+yearly_sales <- super_store %>%
+  group_by(Year) %>%
+  summarise(Total_Sales = sum(Sales)) %>%
+  arrange(Year) %>%
+  mutate(Previous_Year_Sales = lag(Total_Sales),
+         YOY_Growth_Rate = ((Total_Sales - Previous_Year_Sales) / Previous_Year_Sales) * 100)
+
+print(yearly_sales)
+```
+
+```{r}
+#Identifying max total sales and max growth rate
+max_sales <- max(yearly_sales$Total_Sales, na.rm = TRUE)
+max_growth_rate <- max(yearly_sales$YOY_Growth_Rate, na.rm = TRUE)
+
+#Visualizing the YOY Growth Rate
+ggplot(yearly_sales, aes(x = factor(Year))) +
+  geom_bar(aes(y = Total_Sales), stat = "identity", fill = "steelblue", alpha = 0.7) +
+  geom_line(aes(y = YOY_Growth_Rate * max_sales / max_growth_rate, group = 1), color = "red", size = 1.2) +
+  geom_point(aes(y = YOY_Growth_Rate * max_sales / max_growth_rate), color = "red", size = 3) +
+  scale_y_continuous(
+    name = "Total Sales",
+    sec.axis = sec_axis(~ . * max_growth_rate / max_sales, name = "YOY Growth Rate (%)"),
+  labels = comma) +
+  labs(title = "Yearly Sales and YOY Growth Rate",
+       x = "Year",
+       y = "Total Sales") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5)) 
+```
+
+
+
+## Question 2: Which product categories have the best/worst profit margins?
+
+### Objective: Identify high/low performing product categories.
+
+### Tasks:
+
+-   Identify which category has the thinnest margins.
+-   Calculate the profit margin difference between top and bottom categories.
+-   Suggest strategies to improve low-performing categories.
+
+```{r}
+# Calculating profit margins by category
+category_profit_margin <- super_store %>%
+  group_by(Category) %>%
+  summarise(Total_Profit= sum(Profit), Total_Sales= sum(Sales)) %>%
+  mutate(Profit_Margin = (Total_Profit / Total_Sales) * 100) %>%
+  arrange(desc(Profit_Margin))
+category_profit_margin
+```
+
+```{r}
+#Visualizing the Profit Margin by category 
+ggplot(category_profit_margin, aes(x = reorder(Category, Profit_Margin), y = Profit_Margin, fill = Category)) +
+  geom_bar(stat = "identity" , color='black') +
+  labs(title = "Profit Margin by Category", x = "Category", y = "Profit Margin (%)") +
+  theme_minimal() +
+  theme(plot.title= element_text(hjust= 0.5))
+```
+
+```{r}
+## Identifying the top and bottom categories
+top_category <- category_profit_margin %>% 
+  filter(Profit_Margin == max(Profit_Margin))
+
+bottom_category <- category_profit_margin %>% 
+  filter(Profit_Margin == min(Profit_Margin))
+
+# Calculating the margin difference
+margin_difference <- top_category$Profit_Margin - bottom_category$Profit_Margin
+
+#Difference
+cat("The profit margin difference between the top and bottom categories is:","\n", margin_difference,"%")
+```
+```{r}
+# Optimize Pricing and Promotions:
+
+# Reevaluate pricing to ensure competitiveness while maintaining a reasonable profit margin.
+
+# Offer bundled discounts (e.g., pair furniture with office supplies) or run seasonal campaigns during high-demand periods, like back-to-school or holiday sales.
+
+# Enhance Product Appeal:
+ 
+# Introduce innovative designs or multi-functional furniture to differentiate from competitors.
+
+# Highlight eco-friendly, sustainable materials to attract environmentally conscious buyers.
+```
+
+## Question 3: How do regional performances compare?
+
+### Objective: Compare sales distribution and profitability across regions.
+
+### Tasks:
+
+-   Identify which region has both high sales and high profitability.
+-   Find any regions with negative profits.
+-   Analyze if high sales always correlate with high profits.
+-   Propose regional-specific strategies based on findings.
+
+------------------------------------------------------------------------
+
+```{r}
+# Identifying regions
+region_performance <- super_store %>%
+  group_by(Region) %>%
+  summarise(
+  Total_Sales= sum(Sales),
+  Total_Profit= sum(Profit),
+  Profit_Margin=  (sum(Profit) / sum(Sales)) * 100
+  ) %>%
+arrange(desc(Profit_Margin))
+
+  region_performance
+```
+
+```{r}
+# Checking the correlation between high sales and high profits
+correlation_value <- cor(region_performance$Total_Sales, region_performance$Total_Profit)
+
+cat("The correlation between Total Sales and Total Profit is (", correlation_value, 
+    ") which indicates a strong positive correlation.\n")
+```
+```{r}
+# 1. West (High Sales, High Profitability)
+# Expand Market Share: Invest in targeted marketing campaigns to solidify leadership in this high-performing region.
+# Up-selling and Cross-Selling: Encourage customers to buy complementary products by bundling high-demand items.
+# Customer Loyalty: Launch loyalty programs or exclusive offers to retain high-value customers and encourage repeat purchases.
+
+# 2. East (Moderate Sales and Profitability)
+# Boost Awareness: Focus on increasing market penetration through localized advertising or promotional events.
+# Leverage Bestsellers: Promote popular products that perform well in other regions and adapt them to regional preferences.
+# Enhance Distribution: Assess logistics to improve product availability and delivery speed in this area.
+
+# 3. South (Low Sales, Low Profitability)
+# Market Research: Conduct studies to identify why the region has low engagement—this could be due to unmet needs or pricing issues.
+# Targeted Promotions: Offer region-specific discounts or initiatives to attract new customers.
+# Partnership Opportunities: Collaborate with local businesses or influencers to boost brand visibility and credibility.
+
+# 4. Central (Moderate Sales, Low Profitability)
+# Cost Optimization: Analyze the supply chain and operational processes to identify cost-cutting opportunities.
+# Revise Pricing Strategies: Experiment with competitive pricing to attract more buyers without compromising margins.
+# Product Focus: Identify low-performing products and replace them with items that align with customer demand in this region.
+```
+
+### Objective: Identify valuable customer groups using RFM (Recency, Frequency, Monetary) analysis.
+
+### Tasks:
+
+-   Calculate the percentage of customers in each segment.
+-   Identify which segment generates the most revenue.
+-   Develop retention strategies for "At Risk" customers.
+-   Suggest marketing approaches for "High Spenders."
+
+```{r}
+# Calculating the Recency 
+last_purchase_date <- max (super_store$Order.Date)
+
+super_store_summary <- super_store %>%
+  group_by(Customer.ID) %>%
+  summarise(
+    Recency= as.numeric(difftime(last_purchase_date, max(Order.Date), units= "days")),
+    Frequency = n(),
+    Monetary = sum(Sales) 
+  ) 
+```
+
+```{r}
+super_store <- super_store %>%
+  left_join(super_store_summary, by = "Customer.ID")
+```
+
+```{r}
+# Assigning RFM Scores, we can assign scores (e.g., 1-5) for each of them based on quantiles
+
+super_store <- super_store %>%
+  mutate(
+    Recency_Score= ntile(Recency, 5) ,
+    Frequency_Score = ntile(Frequency, 5),
+    Monetary_Score = ntile (Monetary, 5)
+  )
+```
+
+```{r}
+#Calculating RFM segment
+super_store <- super_store %>%
+  mutate(
+    RFM_Score = Recency_Score + Frequency_Score + Monetary_Score
+  )
+```
+
+```{r}
+#Defining RFM segments
+
+super_store <- super_store %>%
+  mutate(
+    Customer_Segment = case_when(
+      RFM_Score == 15 ~ "VIP Customers",
+      RFM_Score >= 12 ~ "High Spenders",
+      RFM_Score >= 9 ~ "Loyal Customers",
+      RFM_Score >= 6 ~ "At Risk Customers",
+      TRUE ~ "Inactive Customers"
+    )
+  )
+```
+
+```{r}
+# Calculating the percentage of customers in each customer segment
+customer_segment_percentage <- super_store %>%
+  group_by(Customer_Segment) %>%
+  summarise(Count= n()) %>%
+  mutate(Percentage= Count / sum(Count) *100) %>%
+  arrange(desc(Percentage))
+
+print(customer_segment_percentage)
+```
+
+```{r}
+#Visualizing the Customer segment distribution by percentage
+ggplot(customer_segment_percentage, aes(x = Customer_Segment, y = Percentage, fill = Customer_Segment)) +
+  geom_bar(stat = "identity", color='black') +
+  geom_text(aes(label = round(Percentage, 2)), vjust = -0.08, size = 4) + 
+  labs(
+    title = "Customer Segment Distribution",
+    x = "Customer Segment",
+    y = "Percentage (%)",
+    fill = "Customer Segment"
+  ) +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust=0.5))+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+```{r}
+#Identifying which customer segment generates the most revenue
+revenue_by_segment <- super_store %>%
+  group_by(Customer_Segment) %>%
+  summarise( Total_Revenue = sum(Monetary)) %>%
+  arrange(desc(Total_Revenue))
+
+print(revenue_by_segment)
+```
+
+```{r}
+#Visualizing Total Revenue by Customer Segment
+ggplot(revenue_by_segment, aes(x = reorder(Customer_Segment, Total_Revenue), y = Total_Revenue, fill = Customer_Segment)) +
+  geom_bar(stat = "identity", color='black') +
+  
+  labs(
+    title = "Total Revenue by Customer Segment",
+    x = "Customer Segment",
+    y = "Total Revenue",
+    fill = "Customer Segment"
+  ) +
+  theme_minimal() +
+  scale_y_continuous(label=comma)+
+  theme(plot.title=element_text(hjust=0.5))+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+```{r}
+# Develop Marketing and retention  strategies for all customer segments
+
+# Strategy for VIP Customers (Segment: VIP Customers)
+vip_customers <- super_store %>% 
+  filter(Customer_Segment == "VIP Customers")
+
+cat("Marketing strategies for 'VIP Customers': Provide exceptional service, VIP events, and exclusive deals to maintain and enhance their loyalty.\n\n")
+
+# Strategy for High Spenders (Segment: High Spenders)
+high_spenders <- super_store %>% 
+  filter(Customer_Segment == "High Spenders")
+
+cat("Marketing strategies for 'High Spenders': Offer VIP access, personalized deals, and loyalty rewards to keep them engaged and increase their spending.\n\n")
+
+# Strategy for Loyal Customers (Segment: Loyal Customers)
+loyal_customers <- super_store %>% 
+  filter(Customer_Segment == "Loyal Customers")
+
+cat("Retention strategies for 'Loyal Customers': Reward loyalty through special offers, exclusive promotions, and early access to new products.\n\n")
+
+# Strategy for At-Risk Customers (Segment: At-Risk Customers)
+at_risk_customers <- super_store %>% 
+  filter(Customer_Segment == "At Risk Customers")
+
+cat("Retention strategies for 'At-Risk Customers': Offer re-engagement campaigns, exclusive discounts, and personalized offers to bring them back.\n\n")
+
+# Strategy for Inactive Customers (Segment: Inactive Customers)
+low_value_customers <- super_store %>% 
+  filter(Customer_Segment == "Inactive Customers")
+
+cat("Retention strategies for 'Inactive Customers': Re-engage them with targeted campaigns and incentives to spark interest.\n")
+
+```
+
+## Question 5: How does shipping mode affect profitability?
+
+### Objective: Analyze cost-to-serve across shipping modes.
+
+### Tasks:
+
+-   Compare profit margins across shipping modes.
+-   Calculate profit per order for each shipping mode.
+-   Suggest an optimal shipping strategy based on findings.
+
+------------------------------------------------------------------------
+
+```{r}
+#Comparing profit margins across shipping modes
+profit_margin_by_shipping_mode <- super_store %>%
+  group_by(Ship.Mode) %>%
+  summarise(
+    Total_Profit= sum(Profit),
+    Total_Sales = sum(Sales),
+    Profit_Margin= (Total_Profit / Total_Sales) *100) %>%
+  arrange(desc(Profit_Margin))
+print(profit_margin_by_shipping_mode)
+```
+
+```{r}
+# Visualizing profit margins by shipping mode
+ggplot(profit_margin_by_shipping_mode, aes(x = reorder(Ship.Mode, Profit_Margin), y = Profit_Margin, fill = Ship.Mode)) +
+  geom_bar(stat = "identity" , color='black') +
+  geom_text(aes(label = round(Profit_Margin, 2)), vjust = -0.3, size = 4) +
+  labs(
+    title = "Profit Margin by Shipping Mode",
+    x = "Shipping Mode",
+    y = "Profit Margin (%)"
+  ) +
+  theme_minimal() +
+  theme(plot.title=element_text(hjust=0.5)) +
+  scale_fill_brewer(palette = "Set2")
+```
+
+```{r}
+# Calculating profit per order for each shipping mode
+profit_per_order_by_shipping_mode <- super_store %>%
+  group_by(Ship.Mode) %>%
+  summarise(
+    Total_Profit = sum(Profit),
+    Total_Orders = n(),
+    Profit_Per_Order = Total_Profit / Total_Orders
+  ) %>%
+  arrange(desc(Profit_Per_Order))
+print(profit_per_order_by_shipping_mode)
+```
+
+```{r}
+#Visualizing  profit per Order by shipping mode
+ggplot(profit_per_order_by_shipping_mode, aes(x = reorder(Ship.Mode, Profit_Per_Order), y = Profit_Per_Order, fill = Ship.Mode)) +
+  geom_bar(stat = "identity", color='black') +
+  geom_text(aes(label = round(Profit_Per_Order, 2)), vjust = -0.3, size = 4) +
+  labs(
+    title = "Profit per Order by Shipping Mode",
+    x = "Shipping Mode",
+    y = "Profit per Order"
+  ) +
+  theme_minimal() +
+  theme(plot.title=element_text(hjust=0.5)) +
+  scale_fill_brewer(palette = "Set2")
+```
+
+```{r}
+cat("** Optimal Shipping Strategy **:\n\n",
+    "1. Prioritize First Class for High-Value Orders – Highest profit margin (13.93%) and profit per order (€31.84). Promote for premium customers.\n\n",
+    "2. Encourage Second Class & Same Day for Mid-Value Orders – Good profit margins (~12.4%) and profit per order (~€29.5). Offer as a balance between cost & speed.\n\n",
+    "3. Optimize Standard Class for Cost-Sensitive Orders – Highest total profit but lowest margin (12.08%). Reduce logistics costs to maintain profitability.\n\n",
+    "Strategy: Use First Class for premium orders, Second/Same Day for mid-tier, and optimize Standard Class for budget customers."
+)
+```
+```{r}
+colnames(super_store)
+```
+
+## Extra Challenge
+
+-   Identify 3 actionable business recommendations.
+```{r}
+# 1.	Target VIP and High-Spender Segments with Personalized Offers
+# Action: Create exclusive promotions or loyalty programs for high-value customers to boost customer retention and increase repeat purchases.
+# Impact: Improved customer loyalty, leading to a potential increase in repeat sales from high-value customers.
+
+# 2.	Optimize Shipping Strategy for Cost and Profitability
+# Action: Offer First Class for premium customers, Second Class for mid-tier, and Standard Class for cost-conscious buyers, while optimizing logistics for Standard Class to reduce costs.
+# Impact: Higher profit margins from premium customers, while cost-effective shipping options improve profitability on larger volumes of lower-margin orders.
+
+# 3.	Regional Product Preferences Analysis and Marketing Adjustments
+# Action: Analyze regional preferences for product categories and tailor marketing campaigns accordingly.
+# Impact: Increased regional sales by aligning product offerings with local preferences, improving conversion rates and customer satisfaction.
+
+```
+
+-   Propose 2 new questions for deeper analysis.
+```{r}
+# 1.	What is the impact of customer segmentation on Furniture sales and profitability?
+# 	Objective: Identify which customer segments (e.g., Consumer, Corporate, Home Office) contribute most to Furniture sales and profitability.
+# 	Tasks: 
+# 	Analyze sales, profit, and quantity by customer segment.
+# 	Determine which segments are most profitable for Furniture.
+# 2.	How do product discounts affect Furniture sales volume and profit margins?
+# 	Objective: Investigate how varying discount levels influence both the sales volume and profit margin of Furniture items.
+# 	Tasks: 
+# 	Calculate the correlation between discount percentages and sales/profit.
+# 	Identify if higher discounts lead to increased sales but lower profitability.
+
+```
+
+-   Estimate the potential financial impact of your recommendations.
+```{r}
+# 1.	Targeting High-Spenders with Personalized Offers
+# Estimated Impact: A 10% increase in repeat purchases from high-value customers could lead to an estimated 15-20% boost in overall revenue from this segment.
+
+# 2.	Optimizing Shipping Strategy for Profitability
+# Estimated Impact: Optimizing shipping choices based on customer value and product type could increase profit margins by 1-2% and decrease logistics costs for Standard Class orders by 5-10%.
+
+# 3.	Regional Product Preferences and Marketing Adjustments
+# Estimated Impact: Tailoring marketing efforts based on regional preferences could result in a 5-10% increase in sales in targeted regions by improving alignment with local demand.
+
+```
+
+
+------------------------------------------------------------------------
+
+## Discussion Points:
+
+-   How do sales trends correlate with marketing initiatives?
+```{r}
+# By analyzing historical sales data alongside marketing campaigns we can identify which campaigns had the most significant impact on sales, helping to improve future marketing strategies.However, we need the data on marketing initiatives.
+```
+
+-   Are there regional preferences for product categories?
+```{r}
+# Yes there are most probably, by analyzing regional sales data for each product category we can reveal specific preferences. For example:
+
+# The West region, with high sales and profitability, might have a strong demand for premium or high-margin products like Technology. Focusing on promoting those could reinforce their preference.
+
+# In the South, where sales and profitability are lower, customers may prioritize cost-effective or essential products like Office Supplies, rather than discretionary items like furniture or technology.
+
+# Preferences may also vary based on regional demographics, local culture, or industry presence. For example, regions with many businesses might favor office supplies, while residential areas might prefer furniture or home technology.
+```
+
+-   What operational changes could improve low-margin categories?
+```{r}
+#To accurately answer this, we might need to do deeper analysis like the two proposed questions could help in asnwering this.
+#Nonetheless we could think of evaluating the supply chain, pricing strategies, and promotions which could help identify ways to reduce costs, improve product offerings, or optimize operations to improve margins.
+```
+
+-   How might customer segmentation affect inventory management?
+```{r}
+# Customer segmentation allows for better forecasting of demand by understanding the buying behavior of each segment. This leads to optimized stock levels and reduced overstocking or stockouts for high-demand products.
+```
+
+
+------------------------------------------------------------------------
